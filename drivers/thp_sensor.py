@@ -5,7 +5,10 @@ import time
 def read_thp_sensor_data(port_name, baud_rate=9600, timeout=1):
     try:
         ser = serial.Serial(port_name, baud_rate, timeout=timeout)
-        time.sleep(1)
+        time.sleep(0.5)  # delay
+        
+        ser.reset_input_buffer()
+        
         ser.write(b'p\r\n')
 
         response = ""
@@ -14,9 +17,9 @@ def read_thp_sensor_data(port_name, baud_rate=9600, timeout=1):
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
                 response += line
-                # Try to find JSON data in the response
+                
+                # find json
                 try:
-                    # Find the start of JSON data (first '{')
                     json_start = response.find('{')
                     if json_start >= 0:
                         json_data = response[json_start:]
@@ -32,13 +35,12 @@ def read_thp_sensor_data(port_name, baud_rate=9600, timeout=1):
                                 'pressure': s.get('Pressure')
                             }
                 except json.JSONDecodeError:
-                    # Continue collecting more data
                     continue
         
-        # If we get here, we timed out without valid JSON
+        # If no JSON
         ser.close()
-        print(f"No valid response from THP sensor. Raw response: {response}")
+        print(f"No valid response from THP sensor on {port_name}. Raw response: {response}")
         return None
     except Exception as e:
-        print(f"THP sensor error: {e}")
+        print(f"Error connecting to {port_name}: {e}")
         return None

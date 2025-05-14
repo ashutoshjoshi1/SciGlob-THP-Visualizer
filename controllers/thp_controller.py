@@ -1,12 +1,13 @@
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QGroupBox, QLabel, QVBoxLayout, QPushButton, QHBoxLayout
 import serial.tools.list_ports
+import time
 
 from drivers.thp_sensor import read_thp_sensor_data
 
 class THPController(QObject):
     status_signal = pyqtSignal(str)
-    data_signal = pyqtSignal(dict)  # emits full sensor dict on each update
+    data_signal = pyqtSignal(dict)
 
     def __init__(self, port=None, parent=None):
         super().__init__(parent)
@@ -41,22 +42,20 @@ class THPController(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_data)
         
-        # Auto-connect on initialization
         QTimer.singleShot(500, self.auto_connect)
 
     def auto_connect(self):
-        """Automatically try to connect to the THP sensor"""
         if self.port:
-            # Try the provided port first
+            # Try
             self.connect_sensor()
         else:
-            # Try to auto-detect the port
+            # auto-detect
             port = self._find_thp_port()
             if port:
                 self.port = port
                 self.connect_sensor()
             else:
-                # If auto-detection fails, try COM10 directly
+                #COM10 directly
                 self.port = "COM10"
                 self.connect_sensor()
 
@@ -68,38 +67,78 @@ class THPController(QObject):
             self.status_signal.emit("THP sensor disconnected")
             return
 
-        # If no port specified, try to find it
+        # If no port
         if not self.port:
             self.port = self._find_thp_port()
             if not self.port:
-                self.port = "COM10"  # Default to COM10 if auto-detection fails
+                self.port = "COM10"  # Default
         
         # Test connection
+        self.status_signal.emit(f"Connecting to THP sensor on {self.port}...")
         test_data = read_thp_sensor_data(self.port)
         if test_data:
             self.connected = True
             self.connect_btn.setText("Disconnect")
             self.timer.start(3000)
             self.status_signal.emit(f"THP sensor connected on {self.port}")
-            self._update_data()  # Update immediately
+            self._update_data()
         else:
             self.status_signal.emit(f"Failed to connect to THP sensor on {self.port}")
 
     def _find_thp_port(self):
-        """Try to auto-detect the THP sensor port"""
+        """Try to auto-detect the THP sensor port by sending simple commands"""
+        self.status_signal.emit("Scanning COM ports...")
         ports = list(serial.tools.list_ports.comports())
+        
         for port in ports:
             try:
-                test_data = read_thp_sensor_data(port.device)
-                if test_data and test_data.get('temperature') is not None:
-                    return port.device
-            except:
+                self.status_signal.emit(f"Trying {port.device}...")
+                ser = serial.Serial(port.device, 9600, timeout=1)
+                time.sleep(0.5)  # delay
+                
+                ser.reset_input_buffer()
+                
+                ser.write(b'p\r\n')
+                
+                response = ""
+                start_time = time.time()
+                while time.time() - start_time < 1:  # 1 sec timeout
+                    if ser.in_waiting > 0:
+                        line = ser.readline().decode('utf-8', errors='ignore').strip()
+                        response += line
+                        
+                        # Check JSON
+                        if '{' in response and 'Sensors' in response:
+                            ser.close()
+                            self.status_signal.emit(f"Found THP sensor on {port.device}")
+                            return port.device
+                
+                # v cmd
+                ser.reset_input_buffer()
+                ser.write(b'v\r\n')
+                
+                response = ""
+                start_time = time.time()
+                while time.time() - start_time < 1:
+                    if ser.in_waiting > 0:
+                        line = ser.readline().decode('utf-8', errors='ignore').strip()
+                        response += line
+                       
+                        if 'version' in response.lower() or 'bme280' in response.lower():
+                            ser.close()
+                            self.status_signal.emit(f"Found THP sensor on {port.device}")
+                            return port.device
+                
+                ser.close()
+            except Exception as e:
+                self.status_signal.emit(f"Error with {port.device}: {str(e)}")
                 continue
+        
+        self.status_signal.emit("No THP sensor found. Will try COM10.")
         return None
 
     def _update_data(self):
         if not self.connected:
-            # Show "---" when not connected
             self.temp_lbl.setText("Temp: --- °C")
             self.hum_lbl.setText("Humidity: --- %")
             self.pres_lbl.setText("Pressure: --- hPa")
@@ -113,7 +152,6 @@ class THPController(QObject):
             self.pres_lbl.setText(f"Pressure: {data['pressure']:.1f} hPa")
             self.data_signal.emit(data)
         else:
-            # Show "---" when read fails
             self.temp_lbl.setText("Temp: --- °C")
             self.hum_lbl.setText("Humidity: --- %")
             self.pres_lbl.setText("Pressure: --- hPa")
