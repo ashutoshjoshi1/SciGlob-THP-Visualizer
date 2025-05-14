@@ -40,9 +40,25 @@ class THPController(QObject):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_data)
-        # Only start timer if port was provided
+        
+        # Auto-connect on initialization
+        QTimer.singleShot(500, self.auto_connect)
+
+    def auto_connect(self):
+        """Automatically try to connect to the THP sensor"""
         if self.port:
+            # Try the provided port first
             self.connect_sensor()
+        else:
+            # Try to auto-detect the port
+            port = self._find_thp_port()
+            if port:
+                self.port = port
+                self.connect_sensor()
+            else:
+                # If auto-detection fails, try COM10 directly
+                self.port = "COM10"
+                self.connect_sensor()
 
     def connect_sensor(self):
         if self.connected:
@@ -52,8 +68,11 @@ class THPController(QObject):
             self.status_signal.emit("THP sensor disconnected")
             return
 
-        # Use COM10 directly, no auto-detection
-        self.port = "COM10"
+        # If no port specified, try to find it
+        if not self.port:
+            self.port = self._find_thp_port()
+            if not self.port:
+                self.port = "COM10"  # Default to COM10 if auto-detection fails
         
         # Test connection
         test_data = read_thp_sensor_data(self.port)
@@ -80,6 +99,10 @@ class THPController(QObject):
 
     def _update_data(self):
         if not self.connected:
+            # Show "---" when not connected
+            self.temp_lbl.setText("Temp: --- °C")
+            self.hum_lbl.setText("Humidity: --- %")
+            self.pres_lbl.setText("Pressure: --- hPa")
             return
             
         data = read_thp_sensor_data(self.port)
@@ -90,6 +113,10 @@ class THPController(QObject):
             self.pres_lbl.setText(f"Pressure: {data['pressure']:.1f} hPa")
             self.data_signal.emit(data)
         else:
+            # Show "---" when read fails
+            self.temp_lbl.setText("Temp: --- °C")
+            self.hum_lbl.setText("Humidity: --- %")
+            self.pres_lbl.setText("Pressure: --- hPa")
             self.status_signal.emit("THP sensor read failed.")
 
     def get_latest(self):
