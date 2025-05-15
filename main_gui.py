@@ -2,17 +2,45 @@ import sys
 import os
 import csv
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                            QHBoxLayout, QStatusBar, QPushButton, QFileDialog)
+                            QHBoxLayout, QStatusBar, QPushButton, QFileDialog, QLabel)
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPalette, QColor
 from datetime import datetime
 import pyqtgraph as pg
 
 from controllers.thp_controller import THPController
 
+# Define color scheme
+ROYAL_BLUE = "#4169E1"
+DARK_BLUE = "#1A2B47"  # Darker blue for background
+MEDIUM_BLUE = "#2A3F5F"  # Medium blue for elements
+LIGHT_BLUE = "#B0C4DE"  # For accents
+TEXT_COLOR = "#FFFFFF"
+GREEN = "#00FF00"
+RED = "#FF0000"
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("THP Live Monitor")
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{ background-color: {DARK_BLUE}; }}
+            QGroupBox {{ 
+                background-color: {MEDIUM_BLUE}; 
+                color: {TEXT_COLOR}; 
+                border-radius: 5px;
+                font-weight: bold;
+            }}
+            QPushButton {{ 
+                background-color: {ROYAL_BLUE}; 
+                color: {TEXT_COLOR}; 
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QPushButton:hover {{ background-color: #5A7CC2; }}
+            QLabel {{ color: {TEXT_COLOR}; }}
+        """)
+        
         # Central 
         central = QWidget()
         main_layout = QVBoxLayout()
@@ -21,7 +49,19 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.status = QStatusBar()
+        self.status.setStyleSheet(f"background-color: {DARK_BLUE}; color: {TEXT_COLOR};")
         self.setStatusBar(self.status)
+
+        # Connection indicator
+        indicator_layout = QHBoxLayout()
+        self.connection_indicator = QLabel()
+        self.connection_indicator.setFixedSize(20, 20)
+        self.connection_indicator.setStyleSheet(f"background-color: {RED}; border-radius: 10px;")
+        indicator_label = QLabel("THP Sensor Connection")
+        indicator_layout.addWidget(self.connection_indicator)
+        indicator_layout.addWidget(indicator_label)
+        indicator_layout.addStretch()
+        main_layout.addLayout(indicator_layout)
 
         # Controllers
         ctrl_layout = QHBoxLayout()
@@ -42,24 +82,29 @@ class MainWindow(QMainWindow):
         date_axis_hum = pg.DateAxisItem(orientation='bottom')
         date_axis_pres = pg.DateAxisItem(orientation='bottom')
 
+        # Set plot background colors
+        pg.setConfigOption('background', DARK_BLUE)
+        pg.setConfigOption('foreground', TEXT_COLOR)
+
         # 3 divisons
         self.thp_layout = pg.GraphicsLayoutWidget()
+        self.thp_layout.setBackground(DARK_BLUE)
         main_layout.addWidget(self.thp_layout)
 
         self.thp_temp_plot = self.thp_layout.addPlot(row=0, col=0, title="Temperature (°C)", axisItems={'bottom': date_axis_temp})
         self.thp_temp_plot.addLegend()
         self.thp_temp_plot.setLabel('left', 'Temperature', units='°C')
-        self.thp_temp_curve = self.thp_temp_plot.plot(name="Temp", pen=pg.mkPen('r', width=2))
+        self.thp_temp_curve = self.thp_temp_plot.plot(name="Temp", pen=pg.mkPen(ROYAL_BLUE, width=2))
 
         self.hum_plot = self.thp_layout.addPlot(row=1, col=0, title="Humidity (%)", axisItems={'bottom': date_axis_hum})
         self.hum_plot.addLegend()
         self.hum_plot.setLabel('left', 'Humidity', units='%')
-        self.hum_curve = self.hum_plot.plot(name="Humidity", pen=pg.mkPen('b', width=2))
+        self.hum_curve = self.hum_plot.plot(name="Humidity", pen=pg.mkPen(LIGHT_BLUE, width=2))
 
         self.pres_plot = self.thp_layout.addPlot(row=2, col=0, title="Pressure (hPa)", axisItems={'bottom': date_axis_pres})
         self.pres_plot.addLegend()
         self.pres_plot.setLabel('left', 'Pressure', units='hPa')
-        self.pres_curve = self.pres_plot.plot(name="Pressure", pen=pg.mkPen('g', width=2))
+        self.pres_curve = self.pres_plot.plot(name="Pressure", pen=pg.mkPen('#1E90FF', width=2))
 
         self.hum_plot.setXLink(self.thp_temp_plot)
         self.pres_plot.setXLink(self.thp_temp_plot)
@@ -85,6 +130,7 @@ class MainWindow(QMainWindow):
             self.thp_temp_plot.setTitle("Temperature (°C) - Not Connected")
             self.hum_plot.setTitle("Humidity (%) - Not Connected")
             self.pres_plot.setTitle("Pressure (hPa) - Not Connected")
+            self.connection_indicator.setStyleSheet(f"background-color: {RED}; border-radius: 10px;")
             
             # Write csv
             if self.csv_file:
@@ -104,6 +150,7 @@ class MainWindow(QMainWindow):
         self.thp_temp_plot.setTitle("Temperature (°C)")
         self.hum_plot.setTitle("Humidity (%)")
         self.pres_plot.setTitle("Pressure (hPa)")
+        self.connection_indicator.setStyleSheet(f"background-color: {GREEN}; border-radius: 10px;")
         
         thp = self.thp_ctrl.get_latest()
         thpt = thp["temperature"]
@@ -133,7 +180,7 @@ class MainWindow(QMainWindow):
 
     def on_thp_data(self, data):
         self.status.showMessage(f"THP data received: T={data['temperature']:.1f}°C, H={data['humidity']:.1f}%, P={data['pressure']:.1f}hPa")
-
+        self.connection_indicator.setStyleSheet(f"background-color: {GREEN}; border-radius: 10px;")
     def setup_csv_logging(self):
         try:
             log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
